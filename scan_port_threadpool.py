@@ -20,7 +20,7 @@ class ScanPortWorkInfo:
   def workThread(self, threadLock):
     try:
       scanner = nmap.PortScanner()
-      result = scanner.scan(self.host, self.port)
+      result = scanner.scan(self.host, str(self.port))
       state = result['scan'][self.host]['tcp'][int(self.port)]['state']
       if state == 'open':
         self._saveWorkInfo(state)
