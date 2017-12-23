@@ -14,4 +14,5 @@ if __name__ == '__main__':
           dbHelper.nonQuery('insert into password(val) value(%s)', (line,))
         except Exception as e:
           print(str(e))
-      numCount -= 1
+      else:
+        numCount -= 1
