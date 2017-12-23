@@ -39,6 +39,7 @@ class ScanPortThreadPool:
   主要维护线程池，进行任务调配
   '''
   def __init__(self, count):
+    # 创建信号量，调度器
     self.threadLock = BoundedSemaphore(value=count)
     self._scheduler = ScanPortScheduler()
 
@@ -58,6 +59,9 @@ class ScanPortScheduler:
     self.dbHelper = DatabaseHelper('192.168.1.102', 'crack_ssh', 'root', '123456')
   
   def getNextWork(self):
+    '''
+    获取下一个任务
+    '''
     dictResult = self.dbHelper.queryOne('select currentAddr from schedule')
     if (dictResult == None):
       self.dbHelper.nonQuery('insert into schedule(currentAddr) values(%s)', ('0.0.0.0',))
